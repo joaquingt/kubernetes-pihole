@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pihole-app
+  namespace: pihole
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pihole-app
+  template:
+    metadata:
+      labels:
+        app: pihole-app
+    spec:
+      containers:
+        - name: pihole-container
+          image: pihole/pihole:latest
+          ports:
+            - name: web-http
+              containerPort: 80
+            - name: web-https
+              containerPort: 443
+            - name: dns-tcp
+              containerPort: 53
+              protocol: TCP
+            - name: dns-udp
+              containerPort: 53
+              protocol: UDP
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "500m"
+          env:
+            - name: WEBPASSWORD
+              value: "12345"
+            - name: PIHOLE_DNS_1
+              value: 8.8.8.8
+            - name: PIHOLE_DNS_2
+              value: 8.8.4.4
+          tty: true
+          volumeMounts:
+            - name: pihole-config-volume
+              mountPath: /etc/pihole
+            - name: pihole-dnsmasq-volume
+              mountPath: /etc/dnsmasq.d
+      volumes:
+        - name: pihole-config-volume
+          persistentVolumeClaim:
+            claimName: pihole-config-pvc
+        - name: pihole-dnsmasq-volume
+          persistentVolumeClaim:
+            claimName: pihole-dnsmasq-pvc
+
