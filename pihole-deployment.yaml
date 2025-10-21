@@ -35,7 +35,7 @@ spec:
               memory: "2Gi"
               cpu: "500m"
           env:
-            - name: WEBPASSWORD
+            - name: FTLCONF_webserver_api_password
               value: "12345"
             - name: PIHOLE_DNS_1
               value: 8.8.8.8

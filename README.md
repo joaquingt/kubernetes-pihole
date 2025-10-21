@@ -4,9 +4,15 @@ A complete Kubernetes deployment for Pi-hole DNS ad-blocker with persistent stor
 
 ## 📋 Prerequisites
 
-- Kubernetes cluster (tested with Docker Desktop)
+### For Docker Desktop Kubernetes:
+- Docker Desktop with Kubernetes enabled
 - kubectl configured
-- NGINX Ingress Controller (for web interface)
+- NGINX Ingress Controller
+
+### For K3s (Raspberry Pi):
+- K3s cluster running
+- kubectl configured to connect to K3s
+- Traefik Ingress Controller (included with K3s)
 
 ## 🏗️ Architecture
 
@@ -22,18 +28,19 @@ A complete Kubernetes deployment for Pi-hole DNS ad-blocker with persistent stor
 
 ```
 kubernetes-pihole/
-├── pihole-namespace.yaml     # Namespace configuration
-├── pihole-pvc.yaml          # Persistent Volume Claims
-├── pihole-deployment.yaml   # Main Pi-hole deployment
-├── pihole-svc.yaml         # ClusterIP service
-├── pihole-svc lb.yaml      # LoadBalancer service
-├── pihole-ingress.yaml     # Ingress for web UI
-└── README.md               # This file
+├── pihole-namespace.yaml        # Namespace configuration
+├── pihole-pvc.yaml             # Persistent Volume Claims (K3s compatible)
+├── pihole-deployment.yaml      # Main Pi-hole deployment
+├── pihole-svc.yaml            # ClusterIP service
+├── pihole-svc-lb.yaml         # LoadBalancer service (optional)
+├── pihole-ingress-traefik.yaml # Ingress for K3s (Traefik)
+├── pihole-ingress-nginx.yaml  # Ingress for Docker Desktop (NGINX)
+└── README.md                  # This file
 ```
 
 ## 🚀 Quick Start
 
-### 1. Deploy Pi-hole
+### Docker Desktop Deployment
 
 ```bash
 # Create namespace and persistent volumes
@@ -43,28 +50,49 @@ kubectl apply -f pihole-pvc.yaml
 # Deploy Pi-hole
 kubectl apply -f pihole-deployment.yaml
 
-# Create service (choose one)
-kubectl apply -f pihole-svc.yaml          # ClusterIP (recommended)
-# OR
-kubectl apply -f pihole-svc\ lb.yaml      # LoadBalancer
+# Create service
+kubectl apply -f pihole-svc.yaml
 
-# Create ingress for web interface
-kubectl apply -f pihole-ingress.yaml
+# Create ingress for Docker Desktop (NGINX)
+kubectl apply -f pihole-ingress-nginx.yaml
+```
+
+### K3s (Raspberry Pi) Deployment
+
+```bash
+# Create namespace and persistent volumes (with explicit storage class)
+kubectl apply -f pihole-namespace.yaml
+kubectl apply -f pihole-pvc.yaml
+
+# Deploy Pi-hole
+kubectl apply -f pihole-deployment.yaml
+
+# Create service
+kubectl apply -f pihole-svc.yaml
+
+# Create ingress (uses Traefik by default)
+kubectl apply -f pihole-ingress-traefik.yaml
 ```
 
 ### 2. Access Pi-hole
 
-#### Web Interface
-- **Via Ingress**: `http://pihole.local` (add to `/etc/hosts`)
+#### Docker Desktop
+- **Via Ingress**: `http://pihole.local` (add `127.0.0.1 pihole.local` to `/etc/hosts`)
 - **Via Port-Forward**: `kubectl port-forward -n pihole service/pihole-service 8080:80`
+- **Default Password**: `12345`
+
+#### K3s (Raspberry Pi)
+- **Via Ingress**: `http://pihole.local` (add `<RASPBERRY_PI_IP> pihole.local` to `/etc/hosts`)
+- **Direct Access**: `http://<RASPBERRY_PI_IP>` (e.g., `http://192.168.1.73`)
 - **Default Password**: `12345`
 
 #### DNS Configuration
 ```bash
-# Port-forward DNS to localhost
+# Docker Desktop - Port-forward DNS to localhost
 kubectl port-forward -n pihole service/pihole-service 53:53
 
-# Then set DNS in your system to: 127.0.0.1
+# K3s - Use Raspberry Pi IP directly
+# Set DNS in your devices to: <RASPBERRY_PI_IP> (e.g., 192.168.1.73)
 ```
 
 ## ⚙️ Configuration
@@ -94,6 +122,14 @@ resources:
 ```
 
 ### Storage
+
+#### Docker Desktop:
+- Uses default storage class or omit `storageClassName`
+- **Config Volume**: 1Gi (`/etc/pihole`)
+- **DNS Config**: 2Gi (`/etc/dnsmasq.d`)
+
+#### K3s:
+- Uses `local-path` storage class (explicitly defined)
 - **Config Volume**: 1Gi (`/etc/pihole`)
 - **DNS Config**: 2Gi (`/etc/dnsmasq.d`)
 
@@ -111,7 +147,8 @@ kubectl delete pod <pod-name> -n pihole
 #### 2. DNS Not Working
 ```bash
 # Test DNS connectivity
-dig @127.0.0.1 -p 53 google.com
+dig @127.0.0.1 -p 53 google.com          # Docker Desktop
+dig @<RASPBERRY_PI_IP> google.com         # K3s
 
 # Check service status
 kubectl get svc -n pihole
@@ -123,8 +160,29 @@ kubectl get pods -n pihole
 # Check ingress
 kubectl get ingress -n pihole
 
-# Add to /etc/hosts if using ingress
+# For Docker Desktop - Add to /etc/hosts
 echo "127.0.0.1 pihole.local" | sudo tee -a /etc/hosts
+
+# For K3s - Add to /etc/hosts  
+echo "<RASPBERRY_PI_IP> pihole.local" | sudo tee -a /etc/hosts
+```
+
+#### 4. PVC Stuck in Pending (K3s)
+```bash
+# Check storage class
+kubectl get storageclass
+
+# Ensure PVCs use explicit storage class
+# Update pihole-pvc.yaml to include: storageClassName: local-path
+```
+
+#### 5. Ingress Issues
+```bash
+# Docker Desktop - Check NGINX ingress
+kubectl get pods -n ingress-nginx
+
+# K3s - Check Traefik ingress
+kubectl get pods -n kube-system | grep traefik
 ```
 
 ### Useful Commands
@@ -183,4 +241,20 @@ This project is open source and available under the [MIT License](LICENSE).
 
 ---
 
-**Note**: This configuration is optimized for local development with Docker Desktop Kubernetes. For production use, consider additional security measures and proper DNS configuration.
+**Note**: This configuration supports both Docker Desktop Kubernetes and K3s deployments. For production use, consider additional security measures and proper DNS configuration.
+
+## 📝 Deployment Differences
+
+### Docker Desktop vs K3s Changes Made:
+
+#### Storage:
+- **Docker Desktop**: Can omit `storageClassName` (uses default)
+- **K3s**: Requires explicit `storageClassName: local-path` in PVCs
+
+#### Ingress:
+- **Docker Desktop**: Uses `ingressClassName: nginx` (pihole-ingress-nginx.yaml)
+- **K3s**: Uses `ingressClassName: traefik` (pihole-ingress-traefik.yaml)
+
+#### Access:
+- **Docker Desktop**: Access via localhost/port-forwarding
+- **K3s**: Direct access via Raspberry Pi IP address
